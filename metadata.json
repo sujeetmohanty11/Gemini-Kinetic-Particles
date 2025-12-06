@@ -1,0 +1,7 @@
+{
+  "name": "Gemini Kinetic Particles",
+  "description": "A real-time, interactive 3D particle system controlled by natural language using Google Gemini 2.5 Flash. Morph shapes, change colors, and adjust dynamics seamlessly.",
+  "requestFramePermissions": [
+    "camera"
+  ]
+}
