@@ -2,6 +2,7 @@ import React, { useState, Suspense, useRef } from 'react';
 import { Canvas, useFrame, useThree } from '@react-three/fiber';
 import { OrbitControls } from '@react-three/drei';
 import * as THREE from 'three';
+import { EffectComposer, Bloom } from '@react-three/postprocessing';
 import ParticleSystem from './components/ParticleSystem';
 import Controls from './components/Controls';
 import HandControl from './components/HandControl';
@@ -17,14 +18,15 @@ const IntroCamera = () => {
     if (finished.current) return;
 
     // Smoothly interpolate camera position from initial far point to target z=6
-    // We use a threshold to stop the animation so the user has full control afterwards
     if (camera.position.z > 6.1) {
       camera.position.z = THREE.MathUtils.lerp(camera.position.z, 6, delta * 1.5);
     } else {
       finished.current = true;
     }
   });
-  return null;
+  
+  // Disable OrbitControls during intro to prevent conflict
+  return finished.current ? null : <group />;
 };
 
 const App: React.FC = () => {
@@ -33,17 +35,25 @@ const App: React.FC = () => {
   const [isHandControlActive, setIsHandControlActive] = useState(false);
   
   // Mutable ref to share high-frequency hand data without re-renders
-  const interactionRef = useRef({ handSpreadMod: 1.0 });
+  // handSpreadMod: Scale of the system (Open/Close hand)
+  // handX, handY: Directional drift (-1 to 1)
+  const interactionRef = useRef({ 
+    handSpreadMod: 1.0,
+    handX: 0,
+    handY: 0
+  });
 
-  const handleHandUpdate = (scaleFactor: number) => {
-    interactionRef.current.handSpreadMod = scaleFactor;
+  const handleHandUpdate = (data: { scale: number, x: number, y: number }) => {
+    interactionRef.current.handSpreadMod = data.scale;
+    interactionRef.current.handX = data.x;
+    interactionRef.current.handY = data.y;
   };
 
   const toggleHandControl = () => {
     setIsHandControlActive(!isHandControlActive);
-    // Reset scale when turning off
+    // Reset interaction state when turning off
     if (isHandControlActive) {
-      interactionRef.current.handSpreadMod = 1.0;
+      interactionRef.current = { handSpreadMod: 1.0, handX: 0, handY: 0 };
     }
   };
 
@@ -71,6 +81,9 @@ const App: React.FC = () => {
             autoRotate={false}
             autoRotateSpeed={0.5}
           />
+          <EffectComposer enableNormalPass={false}>
+            <Bloom luminanceThreshold={0.2} mipmapBlur intensity={0.5} radius={0.4} />
+          </EffectComposer>
         </Canvas>
       </div>
 

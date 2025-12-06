@@ -3,7 +3,8 @@ export enum ParticleShape {
   CUBE = 'CUBE',
   SPIRAL = 'SPIRAL',
   RING = 'RING',
-  TORUS = 'TORUS'
+  TORUS = 'TORUS',
+  PLANET = 'PLANET'
 }
 
 export interface ParticleConfig {
@@ -18,12 +19,12 @@ export interface ParticleConfig {
 }
 
 export const DEFAULT_CONFIG: ParticleConfig = {
-  particleCount: 8000,
-  color: '#00ffff',
-  shape: ParticleShape.SPHERE,
-  speed: 1.0,
+  particleCount: 12000,
+  color: '#FFD700', // Gold
+  shape: ParticleShape.PLANET,
+  speed: 0.5,
   spread: 1.5,
-  noiseStrength: 0.2,
+  noiseStrength: 0.1,
   interactionRadius: 2.0,
   pointSize: 0.05
 };

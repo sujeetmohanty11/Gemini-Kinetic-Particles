@@ -31,7 +31,7 @@ export const generateConfigFromPrompt = async (
             pointSize: { type: Type.NUMBER, description: "Size of individual points (0.01 - 0.2)" },
             shape: { 
               type: Type.STRING, 
-              enum: ["SPHERE", "CUBE", "SPIRAL", "RING", "TORUS"],
+              enum: ["SPHERE", "CUBE", "SPIRAL", "RING", "TORUS", "PLANET"],
               description: "The base geometric shape of the cloud"
             },
             interactionRadius: { type: Type.NUMBER, description: "Mouse interaction radius (0.5 - 5.0)" }

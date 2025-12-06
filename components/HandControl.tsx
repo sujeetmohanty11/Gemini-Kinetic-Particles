@@ -1,9 +1,9 @@
 import React, { useEffect, useRef, useState } from 'react';
 import { FilesetResolver, HandLandmarker } from '@mediapipe/tasks-vision';
-import { Camera, Loader2, Hand } from 'lucide-react';
+import { Camera, Loader2, Hand, Move } from 'lucide-react';
 
 interface HandControlProps {
-  onUpdate: (scaleFactor: number) => void;
+  onUpdate: (data: { scale: number, x: number, y: number }) => void;
   enabled: boolean;
 }
 
@@ -11,9 +11,15 @@ const HandControl: React.FC<HandControlProps> = ({ onUpdate, enabled }) => {
   const videoRef = useRef<HTMLVideoElement>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isCameraReady, setIsCameraReady] = useState(false);
+  const [gestureText, setGestureText] = useState<string>('Detecting...');
+  
   const landmarkerRef = useRef<HandLandmarker | null>(null);
   const requestRef = useRef<number>(0);
+  
+  // Smooth interaction values
   const lastScaleRef = useRef<number>(1.0);
+  const lastXRef = useRef<number>(0);
+  const lastYRef = useRef<number>(0);
 
   useEffect(() => {
     if (!enabled) return;
@@ -89,12 +95,7 @@ const HandControl: React.FC<HandControlProps> = ({ onUpdate, enabled }) => {
     if (result.landmarks && result.landmarks.length > 0) {
       const landmarks = result.landmarks[0];
       
-      // Calculate Openness
-      // Wrist: 0
-      // Middle Finger MCP: 9
-      // Tips: 4, 8, 12, 16, 20
-      
-      // Reference distance: Wrist to Middle Finger MCP (Hand Size)
+      // --- Scale (Open/Close) Logic ---
       const wrist = landmarks[0];
       const middleMCP = landmarks[9];
       const handSize = Math.sqrt(
@@ -103,7 +104,6 @@ const HandControl: React.FC<HandControlProps> = ({ onUpdate, enabled }) => {
         Math.pow(middleMCP.z - wrist.z, 2)
       );
 
-      // Average Tip distance from wrist
       const tips = [4, 8, 12, 16, 20];
       let totalTipDist = 0;
       tips.forEach(idx => {
@@ -114,24 +114,72 @@ const HandControl: React.FC<HandControlProps> = ({ onUpdate, enabled }) => {
           Math.pow(tip.z - wrist.z, 2)
         );
       });
+      
+      // Calculate openness ratio
       const avgTipDist = totalTipDist / 5;
-
-      // Ratio: Open hand ~ 2.0+, Fist ~ 0.8-1.0
       const ratio = avgTipDist / (handSize || 1);
       
-      // Map ratio to scale factor
-      // Fist (1.0) -> 0.4x scale
-      // Open (2.5) -> 1.8x scale
-      const targetScale = Math.max(0.3, Math.min(2.0, (ratio - 0.8) * 0.9 + 0.3));
+      // Tuned for "Fist to Planet" vs "Open to Scatter"
+      // Ratio ~0.5 (Fist) -> Target Scale 1.0 (Planet Form)
+      // Ratio ~2.0 (Open) -> Target Scale 5.0 (Scatter into Space)
+      let targetScale = (ratio * 2.8) - 0.4;
+      
+      // Clamp values
+      // Min 0.8 allows a slight compression for a tight fist
+      // Max 6.0 allows wide scattering
+      targetScale = Math.max(0.8, Math.min(6.0, targetScale));
+
+      // --- Position (Drift) Logic ---
+      // Compute Centroid
+      let sumX = 0, sumY = 0;
+      landmarks.forEach(l => { sumX += l.x; sumY += l.y; });
+      const avgX = sumX / landmarks.length;
+      const avgY = sumY / landmarks.length;
+
+      // Map coordinates
+      // Note: Video is mirrored (scale-x-100), so visual Left is raw Right (x=1)
+      // We want +1 for Visual Right, -1 for Visual Left
+      // If Visual Right -> Raw Left (x=0) -> (0.5 - 0) * 2 = +1. Correct.
+      const targetX = (0.5 - avgX) * 2.0; 
+      
+      // Map Y: Top (0) -> +1, Bottom (1) -> -1
+      const targetY = (0.5 - avgY) * 2.0; 
 
       // Smooth interpolation
       lastScaleRef.current += (targetScale - lastScaleRef.current) * 0.1;
+      lastXRef.current += (targetX - lastXRef.current) * 0.1;
+      lastYRef.current += (targetY - lastYRef.current) * 0.1;
+
+      // Update gesture text for UI
+      let direction = "";
+      if (lastYRef.current > 0.3) direction = "Up";
+      else if (lastYRef.current < -0.3) direction = "Down";
       
-      onUpdate(lastScaleRef.current);
+      if (lastXRef.current > 0.3) direction += (direction ? "-" : "") + "Right";
+      else if (lastXRef.current < -0.3) direction += (direction ? "-" : "") + "Left";
+      
+      const state = lastScaleRef.current > 2.0 ? "Scatter" : "Planet Form";
+      
+      setGestureText(`${direction || "Center"} • ${state}`);
+      
+      onUpdate({
+        scale: lastScaleRef.current,
+        x: lastXRef.current,
+        y: lastYRef.current
+      });
     } else {
-      // Return to default if no hand detected
+      // Return to default
        lastScaleRef.current += (1.0 - lastScaleRef.current) * 0.05;
-       onUpdate(lastScaleRef.current);
+       lastXRef.current += (0 - lastXRef.current) * 0.05;
+       lastYRef.current += (0 - lastYRef.current) * 0.05;
+       
+       setGestureText("No hand detected");
+       
+       onUpdate({
+         scale: lastScaleRef.current,
+         x: lastXRef.current,
+         y: lastYRef.current
+       });
     }
 
     requestRef.current = requestAnimationFrame(predict);
@@ -160,8 +208,9 @@ const HandControl: React.FC<HandControlProps> = ({ onUpdate, enabled }) => {
             <span className="text-[10px] text-white/80 font-mono uppercase">Live Input</span>
         </div>
       </div>
-      <div className="mt-2 text-xs text-white/60 bg-black/40 px-2 py-1 rounded backdrop-blur-sm">
-        <span className="font-semibold text-cyan-400">Gesture:</span> Open Palm (Expand) / Fist (Shrink)
+      <div className="mt-2 text-xs text-white/90 bg-black/60 border border-white/10 px-3 py-2 rounded backdrop-blur-md flex items-center gap-2 min-w-[120px]">
+        <Move className="w-3 h-3 text-cyan-400" />
+        <span className="font-mono font-semibold tracking-wide">{gestureText}</span>
       </div>
     </div>
   );
